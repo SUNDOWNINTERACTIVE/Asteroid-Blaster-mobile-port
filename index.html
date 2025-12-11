@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Asteroid Blaster - Ultimate Edition</title>
+    <title>Asteroid Blaster - Mobile Edition</title>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
         body {
@@ -35,18 +35,18 @@
         .btn:hover { background: #33ff00; color: #000; box-shadow: 0 0 20px rgba(51, 255, 0, 0.8); }
         .btn.off { border-color: #555; color: #555; box-shadow: none; text-shadow: none; }
 
-        /* --- MOBILE CONTROLS (Base) --- */
+        /* --- MOBILE CONTROLS --- */
         #mobile-controls {
             display: none; position: absolute; bottom: 20px; width: 100%;
             justify-content: space-between; padding: 0 40px; box-sizing: border-box;
-            z-index: 999; pointer-events: none; /* Let clicks pass through empty space */
+            z-index: 999; pointer-events: none;
         }
         .touch-btn {
             background: rgba(51, 255, 0, 0.15); border: 2px solid #33ff00; color: #33ff00;
             position: absolute; width: 60px; height: 60px; border-radius: 50%;
             display: flex; justify-content: center; align-items: center; font-size: 24px;
             touch-action: none; box-shadow: 0 0 15px rgba(51, 255, 0, 0.3);
-            pointer-events: auto; /* Re-enable clicks on buttons */
+            pointer-events: auto;
         }
         .touch-btn:active { background: rgba(51, 255, 0, 0.6); transform: scale(0.95); }
         
@@ -64,26 +64,15 @@
         #m-fire:active { background: rgba(255, 0, 0, 0.6); }
 
         /* --- RESPONSIVE LOGIC --- */
-        /* PORTRAIT MODE (Phone Upright) */
         @media (max-width: 850px) and (orientation: portrait) {
             canvas { width: 100% !important; height: auto !important; }
             #mobile-controls { display: flex !important; bottom: 80px; }
-            #controls { display: none; } /* Hide top menu buttons in portrait to save space */
+            #controls { display: none; }
         }
-
-        /* LANDSCAPE MODE (Phone Sideways) - THE FIX */
         @media (max-height: 850px) and (orientation: landscape) {
-            canvas { 
-                height: 100vh !important; /* Fit to height */
-                width: auto !important;   /* Let width adjust automatically */
-                max-width: 100%;
-            }
-            #mobile-controls { 
-                display: flex !important; 
-                bottom: 20px; 
-                padding: 0 60px; /* Push buttons inward slightly */
-            }
-            #controls { top: 10px; right: 10px; transform: scale(0.8); } /* Shrink menu buttons */
+            canvas { height: 100vh !important; width: auto !important; max-width: 100%; }
+            #mobile-controls { display: flex !important; bottom: 20px; padding: 0 60px; }
+            #controls { top: 10px; right: 10px; transform: scale(0.8); }
         }
     </style>
 </head>
@@ -165,10 +154,10 @@
      
     // STATES
     const STATE_SPLASH=-2, STATE_TITLE_DROP=-1, STATE_MENU=0, STATE_HANGAR=1, STATE_INTRO=2, STATE_PLAYING=3, STATE_WARP_OUT=4, STATE_GAMEOVER=5, STATE_ENTER_NAME=6, STATE_HELP=7, STATE_DEMO=8, STATE_BONUS=9, STATE_BOSS=10, STATE_CREDITS=11; 
-    const STATE_STORY_1 = 12; // President
-    const STATE_STORY_2 = 13; // Launch
-     
+    const STATE_STORY_1 = 12; const STATE_STORY_2 = 13; 
     const PU_RAPID=0, PU_DOUBLE=1, PU_NUKE=2, PU_SHIELD=3, PU_TRIPLE=4;
+    const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ .!";
+    let charIndex = 0;
      
     // Parallax Stars
     const stars = [];
@@ -192,18 +181,9 @@
     let highScoreList = []; let nameEntry="", globalTimer=0, keys={left:false,right:false,up:false,space:false};
     let shakeAmount = 0, shakeX = 0, shakeY = 0;
 
-    // LOCAL STORAGE HANDLING
-    function loadHighScores() {
-        try {
-            const stored = localStorage.getItem('asteroid_blaster_scores');
-            if(stored) highScoreList = JSON.parse(stored);
-        } catch(e) { console.log("Save load failed"); }
-    }
-    function saveHighScores() {
-        try {
-            localStorage.setItem('asteroid_blaster_scores', JSON.stringify(highScoreList));
-        } catch(e) { console.log("Save failed"); }
-    }
+    // LOCAL STORAGE
+    function loadHighScores() { try { const stored = localStorage.getItem('asteroid_blaster_scores'); if(stored) highScoreList = JSON.parse(stored); } catch(e) {} }
+    function saveHighScores() { try { localStorage.setItem('asteroid_blaster_scores', JSON.stringify(highScoreList)); } catch(e) {} }
     loadHighScores();
 
     let splashTimer = 0; const SPLASH_DURATION = 5 * FPS;
@@ -213,9 +193,7 @@
     let menuIdleTimer = 0; const DEMO_WAIT_TIME = 5 * FPS; 
     let bonusTimer = 0; const BONUS_DURATION = 20 * FPS;
     let storyText = "COMMANDER... THE SENSORS ARE SCREAMING. A MASSIVE ASTEROID SWARM IS ON A COLLISION COURSE WITH EARTH. OUR DEFENSE FLEET IS GONE. YOU ARE HUMANITY'S LAST HOPE. GOOD LUCK.";
-    let storyIndex = 0;
-    let storyTimer = 0;
-    let launchY = 0; 
+    let storyIndex = 0; let storyTimer = 0; let launchY = 0; 
 
     ship=newShip(); level=0; createAsteroidBelt(5);
 
@@ -225,6 +203,24 @@
         if(AudioSys.ctx && AudioSys.ctx.state === 'suspended') AudioSys.ctx.resume();
         if(gameState===STATE_MENU) menuIdleTimer = 0;
         
+        // ARCADE HIGH SCORE INPUT
+        if(gameState===STATE_ENTER_NAME) {
+            if(ev.keyCode===37) { // Left
+                charIndex--; if(charIndex < 0) charIndex = ALPHABET.length - 1;
+                AudioSys.playTone(400,'square',0.05,0.1);
+            }
+            if(ev.keyCode===39) { // Right
+                charIndex++; if(charIndex >= ALPHABET.length) charIndex = 0;
+                AudioSys.playTone(400,'square',0.05,0.1);
+            }
+            if(ev.keyCode===13 || ev.keyCode===32) { // Enter/Space/Fire
+                nameEntry += ALPHABET[charIndex];
+                AudioSys.playTone(800,'square',0.1,0.2);
+                if(nameEntry.length >= 3) saveScore();
+            }
+            return;
+        }
+
         // Skip Logic
         if ([STATE_SPLASH, STATE_TITLE_DROP, STATE_STORY_1, STATE_STORY_2].includes(gameState)) {
             if(ev.keyCode===13 || ev.keyCode===32) {
@@ -235,20 +231,24 @@
         }
 
         if(gameState===STATE_DEMO) { if(ev.keyCode===13 || ev.keyCode===32) { gameState=STATE_MENU; AudioSys.startMusic('menu'); menuIdleTimer=0; ship=newShip(); level=0; createAsteroidBelt(5); keys={left:false,right:false,up:false,space:false}; AudioSys.stopThrust(); } return; }
-        if(gameState===STATE_CREDITS) { if(ev.keyCode===13 || ev.keyCode===32 || ev.keyCode===27 || ev.keyCode===67) { gameState=STATE_MENU; } return; }
+        if(gameState===STATE_CREDITS) { if(ev.keyCode===13 || ev.keyCode===32 || ev.keyCode===27 || ev.keyCode===67 || ev.keyCode===39) { gameState=STATE_MENU; } return; }
         if(gameState===STATE_HANGAR) { 
             if (ev.keyCode===37) { selectedShipIdx--; if(selectedShipIdx<0) selectedShipIdx=SHIPS.length-1; } 
             if (ev.keyCode===39) { selectedShipIdx++; if(selectedShipIdx>=SHIPS.length) selectedShipIdx=0; } 
-            if (ev.keyCode===13 || ev.keyCode===32) { 
-                AudioSys.playStartSound(); 
-                setTimeout(startStorySequence, 500); 
-            } 
+            if (ev.keyCode===13 || ev.keyCode===32) { AudioSys.playStartSound(); setTimeout(startStorySequence, 500); } 
             if (ev.keyCode===27) gameState = STATE_MENU; return; 
         }
-        if(ev.keyCode===72 && gameState===STATE_MENU) { gameState=STATE_HELP; return; }
-        if(ev.keyCode===67 && gameState===STATE_MENU) { gameState=STATE_CREDITS; return; }
-        if(ev.keyCode===13 || ev.keyCode===32) { if(gameState===STATE_HELP) { gameState=STATE_MENU; return; } if(gameState===STATE_MENU) { gameState=STATE_HANGAR; return; } if(gameState===STATE_GAMEOVER) { if(gameState===STATE_ENTER_NAME) { saveScore(); return; } else { gameState=STATE_MENU; AudioSys.startMusic('menu'); } } }
-        if(gameState===STATE_ENTER_NAME) { if(ev.keyCode>=65 && ev.keyCode<=90 && nameEntry.length<3) nameEntry+=String.fromCharCode(ev.keyCode); else if(ev.keyCode===8) nameEntry=nameEntry.slice(0,-1); else if(ev.keyCode===13 && nameEntry.length>0) saveScore(); return; }
+        if(gameState===STATE_HELP) { if(ev.keyCode===13 || ev.keyCode===32 || ev.keyCode===27 || ev.keyCode===37) { gameState=STATE_MENU; return; } }
+        
+        // MAIN MENU NAV
+        if(gameState===STATE_MENU) {
+            if(ev.keyCode===72 || ev.keyCode===37) { gameState=STATE_HELP; return; } // H or Left
+            if(ev.keyCode===67 || ev.keyCode===39) { gameState=STATE_CREDITS; return; } // C or Right
+            if(ev.keyCode===13 || ev.keyCode===32) { gameState=STATE_HANGAR; return; } 
+        }
+
+        if(gameState===STATE_GAMEOVER) { if(gameState===STATE_ENTER_NAME) { saveScore(); return; } else { gameState=STATE_MENU; AudioSys.startMusic('menu'); } }
+        
         switch(ev.keyCode) { case 32: keys.space=true; if(gameState===STATE_PLAYING || gameState===STATE_BOSS) shootLaser(); break; case 37: keys.left=true; break; case 38: keys.up=true; if((gameState===STATE_PLAYING || gameState===STATE_BOSS) && !ship.dead) AudioSys.startThrust(); break; case 39: keys.right=true; break; }
     });
     document.addEventListener("keyup", (ev) => { switch(ev.keyCode) { case 32: keys.space=false; break; case 37: keys.left=false; break; case 38: keys.up=false; if(gameState!==STATE_WARP_OUT) AudioSys.stopThrust(); break; case 39: keys.right=false; break; } });
@@ -373,7 +373,7 @@
     }
 
     function checkWinCondition() { if(asteroids.length===0 && !boss && gameState===STATE_PLAYING) startWarpOut(); }
-    function gameOver() { ship.dead=true; AudioSys.stopMusic(); if(score>highScoreList[highScoreList.length-1]?.score || highScoreList.length<5){nameEntry="";gameState=STATE_ENTER_NAME;}else{gameState=STATE_GAMEOVER;} }
+    function gameOver() { ship.dead=true; AudioSys.stopMusic(); if(score>highScoreList[highScoreList.length-1]?.score || highScoreList.length<5){charIndex=0; nameEntry="";gameState=STATE_ENTER_NAME;}else{gameState=STATE_GAMEOVER;} }
     function saveScore() { highScoreList.push({name:nameEntry,score:score,level:level}); highScoreList.sort((a,b)=>b.score-a.score); if(highScoreList.length>5)highScoreList.pop(); saveHighScores(); gameState=STATE_GAMEOVER; }
      
     function createExplosion(x, y, color, type) {
@@ -520,11 +520,39 @@
         }
         setGlow("transparent", 0);
 
-        if(gameState===STATE_MENU) { menuIdleTimer++; if (menuIdleTimer > DEMO_WAIT_TIME) startDemo(); setGlow("red", 20); ctx.font="bold 60px 'Press Start 2P'"; ctx.textAlign="center"; let titleAlpha = Math.min(1, globalTimer / 100); ctx.globalAlpha = titleAlpha; let g=ctx.createLinearGradient(0,0,canvas.width,0);g.addColorStop("0","yellow");g.addColorStop("0.5","orange");g.addColorStop("1.0","red"); ctx.fillStyle=g; ctx.fillText("ASTEROID",canvas.width/2,200); ctx.fillText("BLASTER",canvas.width/2,270); setGlow("transparent", 0); ctx.globalAlpha = 1.0; if(Math.floor(globalTimer/30)%2===0 && titleAlpha >= 1){ctx.fillStyle="white";ctx.font="20px 'Press Start 2P'";ctx.fillText("TAP OR PRESS ENTER",canvas.width/2,400);} ctx.font="15px 'Press Start 2P'"; ctx.fillStyle="#aaa"; ctx.fillText("PRESS 'H' FOR HELP",canvas.width/2,460); ctx.fillText("PRESS 'C' FOR CREDITS",canvas.width/2,490); ctx.font="12px 'Press Start 2P'"; ctx.fillStyle="#33ff00"; ctx.fillText("© 2025 SUNDOWN INTERACTIVE",canvas.width/2,550); drawLeaderboard(100); drawScanlines(); ctx.restore(); return; }
+        if(gameState===STATE_MENU) { 
+            menuIdleTimer++; if (menuIdleTimer > DEMO_WAIT_TIME) startDemo(); 
+            setGlow("red", 20); ctx.font="bold 60px 'Press Start 2P'"; ctx.textAlign="center"; 
+            let titleAlpha = Math.min(1, globalTimer / 100); ctx.globalAlpha = titleAlpha; 
+            let g=ctx.createLinearGradient(0,0,canvas.width,0);g.addColorStop("0","yellow");g.addColorStop("0.5","orange");g.addColorStop("1.0","red"); 
+            ctx.fillStyle=g; ctx.fillText("ASTEROID",canvas.width/2,200); ctx.fillText("BLASTER",canvas.width/2,270); 
+            setGlow("transparent", 0); ctx.globalAlpha = 1.0; 
+            if(Math.floor(globalTimer/30)%2===0 && titleAlpha >= 1){
+                ctx.fillStyle="white";ctx.font="20px 'Press Start 2P'";ctx.fillText("TAP OR PRESS ENTER",canvas.width/2,400);
+            } 
+            ctx.font="15px 'Press Start 2P'"; ctx.fillStyle="#aaa"; 
+            // UPDATED TEXT FOR MOBILE USERS
+            ctx.fillText("TAP LEFT FOR HELP",canvas.width/2,460); 
+            ctx.fillText("TAP RIGHT FOR CREDITS",canvas.width/2,490); 
+            ctx.font="12px 'Press Start 2P'"; ctx.fillStyle="#33ff00"; ctx.fillText("© 2025 SUNDOWN INTERACTIVE",canvas.width/2,550); 
+            drawLeaderboard(100); drawScanlines(); ctx.restore(); return; 
+        }
         if(gameState===STATE_HANGAR) { renderHangar(); drawScanlines(); ctx.restore(); return; }
         if(gameState===STATE_HELP) { renderHelp(); ctx.restore(); return; }
         if(gameState===STATE_CREDITS) { renderCredits(); ctx.restore(); return; }
-        if(gameState===STATE_ENTER_NAME) { drawCenteredText("NEW HIGH SCORE!",-50,30); drawCenteredText("TYPE INITIALS",0,20); drawCenteredText(nameEntry+(Math.floor(globalTimer/10)%2==0?"_":""),50,40,"#33ff00"); ctx.restore(); return; }
+        
+        // ARCADE ENTRY RENDER
+        if(gameState===STATE_ENTER_NAME) { 
+            drawCenteredText("NEW HIGH SCORE!",-50,30); 
+            drawCenteredText("ENTER INITIALS",-20,20); 
+            drawCenteredText(nameEntry, 20, 40, "#33ff00"); 
+            if(Math.floor(globalTimer/10)%2==0 && nameEntry.length < 3) {
+                drawCenteredText(ALPHABET[charIndex], 60, 30, "yellow");
+                ctx.font="20px 'Press Start 2P'"; ctx.fillStyle="yellow"; ctx.fillText("^", canvas.width/2, canvas.height/2 + 90);
+            }
+            ctx.restore(); return; 
+        }
+
         if(gameState===STATE_GAMEOVER) { drawCenteredText("GAME OVER",-80,50,"red"); drawCenteredText("SCORE: "+score+" - LVL: "+level,-40,20); drawLeaderboard(300); if(Math.floor(globalTimer/30)%2===0)drawCenteredText("PRESS ENTER TO RESTART",200,15); ctx.restore(); return; }
 
         if(!ship.dead && gameState !== STATE_GAMEOVER) {
@@ -600,18 +628,27 @@
             if(key === 'fire') {
                  keys.space = true;
                  if(gameState===STATE_PLAYING || gameState===STATE_BOSS) shootLaser();
-                 // Simulate Enter key on menus
+                 
+                 // Main Menu Selection (Start)
                  if([STATE_MENU, STATE_HANGAR, STATE_GAMEOVER, STATE_SPLASH, STATE_TITLE_DROP, STATE_STORY_1, STATE_STORY_2, STATE_HELP, STATE_CREDITS, STATE_DEMO].includes(gameState)) {
-                    // Trigger a fake keydown event for Enter
+                    document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 13}));
+                 }
+                 // High Score Selection (Fire = Select Letter)
+                 if(gameState===STATE_ENTER_NAME) {
                     document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 13}));
                  }
             } else {
                 keys[key] = true;
                 if(isThrust && (gameState===STATE_PLAYING || gameState===STATE_BOSS) && !ship.dead) AudioSys.startThrust();
-                // Simulate Left/Right for Hangar ship selection
-                if(gameState===STATE_HANGAR) {
-                    if(key==='left') document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 37}));
-                    if(key==='right') document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 39}));
+                
+                // Navigation Logic
+                if(gameState===STATE_HANGAR || gameState===STATE_MENU || gameState===STATE_ENTER_NAME || gameState===STATE_HELP || gameState===STATE_CREDITS) {
+                    if(key==='left') {
+                        document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 37}));
+                    }
+                    if(key==='right') {
+                        document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 39}));
+                    }
                 }
             }
         }, {passive: false});
