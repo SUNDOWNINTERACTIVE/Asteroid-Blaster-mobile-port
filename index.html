@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Asteroid Blaster - Arcade Edition</title>
+    <title>Asteroid Blaster - Arsenal & Adversaries</title>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
         body {
@@ -35,16 +35,14 @@
         .btn:hover { background: #33ff00; color: #000; box-shadow: 0 0 20px rgba(51, 255, 0, 0.8); }
         .btn.off { border-color: #555; color: #555; box-shadow: none; text-shadow: none; }
 
-        /* --- MOBILE CONTROLS (Adjusted) --- */
+        /* --- MOBILE CONTROLS --- */
         #mobile-controls {
             display: none; position: absolute; bottom: 20px; width: 100%;
-            /* Reduced padding to move controls left */
             justify-content: space-between; padding: 0 20px; box-sizing: border-box;
             z-index: 999; pointer-events: none;
         }
         .touch-btn {
             background: rgba(51, 255, 0, 0.15); border: 2px solid #33ff00; color: #33ff00;
-            /* Made buttons smaller (50px instead of 60px) */
             position: absolute; width: 50px; height: 50px; border-radius: 50%;
             display: flex; justify-content: center; align-items: center; font-size: 20px;
             touch-action: none; box-shadow: 0 0 15px rgba(51, 255, 0, 0.3);
@@ -52,11 +50,9 @@
         }
         .touch-btn:active { background: rgba(51, 255, 0, 0.6); transform: scale(0.95); }
         
-        /* Tighter D-pad container */
         .d-pad { position: relative; width: 110px; height: 110px; }
         .action-pad { position: relative; width: 100px; height: 160px; }
 
-        /* New non-overlapping positions */
         #m-up { top: 0; left: 30px; }
         #m-left { bottom: 0; left: 0; }
         #m-right { bottom: 0; right: 0; }
@@ -140,6 +136,8 @@
         powerUp: function() { this.playTone(600,'sine',0.1,0.2); setTimeout(()=>this.playTone(1200,'square',0.2,0.2),100); },
         nuke: function() { this.playNoise(1.5,0.8); },
         jackpot: function() { this.playTone(1000,'square',0.1,0.3); setTimeout(()=>this.playTone(1500,'square',0.2,0.3), 100); setTimeout(()=>this.playTone(2000,'square',0.4,0.3), 300); },
+        shotgun: function() { this.playNoise(0.2, 0.3); },
+        railgun: function() { this.playTone(200, 'sawtooth', 0.1, 0.1); this.playTone(800, 'sine', 0.3, 0.2); },
         shoot: function(r) { let f=r?1200:880,d=r?0.05:0.1; this.playTone(f,'square',d,0.05); },
         bossShoot: function() { this.playTone(200,'sawtooth',0.2,0.1); },
         playType: function() { this.playTone(800, 'square', 0.05, 0.05); }
@@ -160,7 +158,7 @@
     // STATES
     const STATE_SPLASH=-2, STATE_TITLE_DROP=-1, STATE_MENU=0, STATE_HANGAR=1, STATE_INTRO=2, STATE_PLAYING=3, STATE_WARP_OUT=4, STATE_GAMEOVER=5, STATE_ENTER_NAME=6, STATE_HELP=7, STATE_DEMO=8, STATE_BONUS=9, STATE_BOSS=10, STATE_CREDITS=11; 
     const STATE_STORY_1 = 12; const STATE_STORY_2 = 13; 
-    const PU_RAPID=0, PU_DOUBLE=1, PU_NUKE=2, PU_SHIELD=3, PU_TRIPLE=4;
+    const PU_RAPID=0, PU_DOUBLE=1, PU_NUKE=2, PU_SHIELD=3, PU_TRIPLE=4, PU_SHOTGUN=5, PU_RAILGUN=6;
     const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ .!";
     let charIndex = 0;
      
@@ -181,10 +179,11 @@
     let currentArtifact = null; 
     let bgCol = "#050508"; 
 
-    let gameState=STATE_SPLASH, level, lives, score, asteroids, ship, lasers, particles, powerups, floatingTexts, aliens = [];
+    let gameState=STATE_SPLASH, level, lives, score, asteroids, ship, lasers, particles, powerups, floatingTexts, aliens = [], hunterMines = [];
     let bonusOrbs = [], boss = null, bossBullets = [];
     let highScoreList = []; let nameEntry="", globalTimer=0, keys={left:false,right:false,up:false,space:false};
     let shakeAmount = 0, shakeX = 0, shakeY = 0;
+    let combo = 1, comboTimer = 0;
 
     // LOCAL STORAGE
     function loadHighScores() { try { const stored = localStorage.getItem('asteroid_blaster_scores'); if(stored) highScoreList = JSON.parse(stored); } catch(e) {} }
@@ -272,7 +271,9 @@
     function startLevelIntro() { 
         gameState = STATE_INTRO; introTimer = INTRO_DURATION; AudioSys.playLevelIntro(); 
         ship.x = canvas.width/2; ship.y = canvas.height/2; ship.a=90/180*Math.PI; ship.thrust = { x: 0, y: 0 }; ship.blinkNum = Math.ceil(3.0 * FPS); 
-        lasers=[]; particles=[]; powerups=[]; floatingTexts=[]; bonusOrbs=[]; bossBullets=[]; aliens=[];
+        lasers=[]; particles=[]; powerups=[]; floatingTexts=[]; bonusOrbs=[]; bossBullets=[]; aliens=[]; hunterMines=[];
+        ship.weaponType = 0; ship.weaponTimer = 0; // Reset special weapons
+        combo = 1; comboTimer = 0;
         
         let themeRoll = level % 4;
         if(themeRoll === 1) bgCol = "#050011"; 
@@ -297,7 +298,7 @@
     }
 
     function startWarpOut() { gameState = STATE_WARP_OUT; warpTimer = 0; AudioSys.startThrust(true); }
-    function newShip() { const config = SHIPS[selectedShipIdx]; return { x:canvas.width/2, y:canvas.height/2, a:90/180*Math.PI, r:SHIP_SIZE/2, rot:0, thrusting:false, thrust:{x:0,y:0}, blinkNum:0, blinkOn:true, rapidFire: false, doubleShip: false, tripleFire: (config.id===3), shieldTime:0, hp: config.hp, speed: config.speed, fireRateLimit: config.fireRate, color: config.color }; }
+    function newShip() { const config = SHIPS[selectedShipIdx]; return { x:canvas.width/2, y:canvas.height/2, a:90/180*Math.PI, r:SHIP_SIZE/2, rot:0, thrusting:false, thrust:{x:0,y:0}, blinkNum:0, blinkOn:true, rapidFire: false, doubleShip: false, tripleFire: (config.id===3), shieldTime:0, hp: config.hp, speed: config.speed, fireRateLimit: config.fireRate, color: config.color, weaponType: 0, weaponTimer: 0 }; }
      
     // INCREASED DIFFICULTY MULTIPLIER
     function createAsteroidBelt(overrideNum=0) { asteroids=[]; let multiplier = (selectedShipIdx === 3) ? 1.5 : 1.0; let num=Math.ceil((overrideNum>0?overrideNum: 5 + level * 1.5) * multiplier); for(let i=0;i<num;i++) { let x,y; do{x=Math.floor(Math.random()*canvas.width);y=Math.floor(Math.random()*canvas.height);}while(dist(ship.x,ship.y,x,y)<ROID_SIZE*4+ship.r); asteroids.push(newAsteroid(x,y,Math.ceil(ROID_SIZE/2))); } }
@@ -339,12 +340,66 @@
         else { x=Math.random()*canvas.width; y=canvas.height+20; xv=(Math.random()-0.5)*spd/FPS; yv=-spd/FPS; }
         aliens.push({x:x, y:y, xv:xv, yv:yv, r:15, timer:0});
     }
+
+    function spawnMine() {
+        let x,y; do{x=Math.random()*canvas.width;y=Math.random()*canvas.height;}while(dist(ship.x,ship.y,x,y)<200);
+        hunterMines.push({x:x, y:y, xv:0, yv:0, r:12, acc: 0.05 + (level*0.01) });
+    }
      
-    function spawnPowerUp(forceType=-1) { let type=forceType!==-1?forceType:Math.floor(Math.random()*5); powerups.push({x:Math.random()*canvas.width, y:Math.random()*canvas.height, type:type, r:15}); }
+    function spawnPowerUp(forceType=-1) { let type=forceType!==-1?forceType:Math.floor(Math.random()*7); powerups.push({x:Math.random()*canvas.width, y:Math.random()*canvas.height, type:type, r:15}); }
     function spawnFloatingText(x, y, text, color) { floatingTexts.push({x:x, y:y, text:text, life:1.0, color:color}); }
-    function shootLaser() { let limit=ship.fireRateLimit; if(ship.rapidFire) limit *= 2; if (lasers.length >= limit) return; AudioSys.shoot(ship.rapidFire); if (ship.tripleFire) { createLaser(ship.x, ship.y, ship.a); createLaser(ship.x, ship.y, ship.a + 0.15); createLaser(ship.x, ship.y, ship.a - 0.15); } else { createLaser(ship.x, ship.y, ship.a); } if(ship.doubleShip) { let wx=ship.x+Math.cos(ship.a-Math.PI/2)*20, wy=ship.y-Math.sin(ship.a-Math.PI/2)*20; createLaser(wx, wy, ship.a); } }
-    function createLaser(x,y,a) { lasers.push({x:x+4/3*ship.r*Math.cos(a), y:y-4/3*ship.r*Math.sin(a), xv:LASER_SPD*Math.cos(a)/FPS, yv:-LASER_SPD*Math.sin(a)/FPS, dist:0, ang: a}); }
-    function activatePowerUp(t) { AudioSys.powerUp(); let txt = "+500"; if(t===PU_RAPID){ ship.rapidFire=true; score+=500; } else if(t===PU_DOUBLE){ ship.doubleShip=true; score+=500; } else if(t===PU_SHIELD){ ship.shieldTime = 10 * FPS; score+=500; txt="SHIELD"; } else if(t===PU_TRIPLE){ ship.tripleFire=true; score+=500; txt="TRIPLE"; } else if(t===PU_NUKE){ AudioSys.nuke(); applyScreenShake(20); let pts=asteroids.length*400; score+=pts; txt="+"+pts; asteroids=[]; particles=[]; aliens=[]; } spawnFloatingText(ship.x, ship.y, txt, "white"); }
+    
+    function shootLaser() { 
+        let limit=ship.fireRateLimit; if(ship.rapidFire) limit *= 2; 
+        if (lasers.length >= limit && ship.weaponType === 0) return; 
+        
+        // SHOTGUN (Green S)
+        if(ship.weaponType === 1) {
+            AudioSys.shotgun();
+            for(let i=0; i<5; i++) {
+                createLaser(ship.x, ship.y, ship.a + (Math.random()-0.5)*0.5, 1);
+            }
+            return;
+        }
+        // RAILGUN (Blue G)
+        if(ship.weaponType === 2) {
+            AudioSys.railgun();
+            createLaser(ship.x, ship.y, ship.a, 2);
+            return;
+        }
+
+        AudioSys.shoot(ship.rapidFire); 
+        if (ship.tripleFire) { createLaser(ship.x, ship.y, ship.a); createLaser(ship.x, ship.y, ship.a + 0.15); createLaser(ship.x, ship.y, ship.a - 0.15); } 
+        else { createLaser(ship.x, ship.y, ship.a); } 
+        if(ship.doubleShip) { let wx=ship.x+Math.cos(ship.a-Math.PI/2)*20, wy=ship.y-Math.sin(ship.a-Math.PI/2)*20; createLaser(wx, wy, ship.a); } 
+    }
+
+    function createLaser(x,y,a, type=0) { 
+        // Type 0: Normal, 1: Shotgun, 2: Railgun
+        let speed = LASER_SPD;
+        let life = canvas.width * 0.7;
+        let color = "#33ff00";
+        if(type === 1) { life = 200; color = "#00ff00"; }
+        if(type === 2) { speed = LASER_SPD * 2; life = canvas.width; color = "cyan"; }
+        
+        lasers.push({
+            x:x+4/3*ship.r*Math.cos(a), y:y-4/3*ship.r*Math.sin(a), 
+            xv:speed*Math.cos(a)/FPS, yv:-speed*Math.sin(a)/FPS, 
+            dist:0, ang: a, type: type, maxDist: life, color: color
+        }); 
+    }
+
+    function activatePowerUp(t) { 
+        AudioSys.powerUp(); let txt = "+500"; 
+        if(t===PU_RAPID){ ship.rapidFire=true; score+=500; } 
+        else if(t===PU_DOUBLE){ ship.doubleShip=true; score+=500; } 
+        else if(t===PU_SHIELD){ ship.shieldTime = 10 * FPS; score+=500; txt="SHIELD"; } 
+        else if(t===PU_TRIPLE){ ship.tripleFire=true; score+=500; txt="TRIPLE"; } 
+        else if(t===PU_NUKE){ AudioSys.nuke(); applyScreenShake(20); let pts=asteroids.length*400; score+=pts; txt="+"+pts; asteroids=[]; particles=[]; aliens=[]; hunterMines=[]; } 
+        else if(t===PU_SHOTGUN){ ship.weaponType = 1; ship.weaponTimer = 10 * FPS; txt="SHOTGUN"; }
+        else if(t===PU_RAILGUN){ ship.weaponType = 2; ship.weaponTimer = 10 * FPS; txt="RAILGUN"; }
+        spawnFloatingText(ship.x, ship.y, txt, "white"); 
+    }
     function applyScreenShake(amount) { shakeAmount = amount; }
 
     function updateBoss() { if(!boss) return; boss.x += 2 * boss.dir; if(boss.x > canvas.width - 50 || boss.x < 50) boss.dir *= -1; boss.timer++; if(boss.timer > 40) { boss.timer = 0; let ang = Math.atan2(ship.y - boss.y, ship.x - boss.x); bossBullets.push({x: boss.x, y: boss.y, xv: Math.cos(ang)*200/FPS, yv: Math.sin(ang)*200/FPS}); AudioSys.bossShoot(); } if (boss.hitTime > 0) boss.hitTime--; if (globalTimer % 300 === 0) spawnPowerUp(); let col = boss.hitTime > 0 ? "white" : "red"; setGlow(col, 20); ctx.strokeStyle = col; ctx.lineWidth=3; ctx.beginPath(); ctx.ellipse(boss.x, boss.y, boss.r, boss.r/2, 0, 0, Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.arc(boss.x, boss.y-10, 15, 0, Math.PI*2); ctx.stroke(); setGlow("transparent", 0); ctx.fillStyle="red"; ctx.fillRect(boss.x-30, boss.y-40, 60, 5); ctx.fillStyle="#0f0"; ctx.fillRect(boss.x-30, boss.y-40, 60 * (boss.hp/boss.maxHp), 5); }
@@ -363,14 +418,27 @@
     }
      
     function autoPilot() { let target = null; let distLimit = 10000; if(boss) target = boss; else { for(let i=0; i<asteroids.length; i++){ let d = dist(ship.x, ship.y, asteroids[i].x, asteroids[i].y); if(d < distLimit){ distLimit = d; target = asteroids[i]; } } } if(target) { let dx = target.x - ship.x; let dy = -(target.y - ship.y); let targetA = Math.atan2(dy, dx); let shipA = ship.a % (Math.PI*2); if(shipA < 0) shipA += Math.PI*2; if(targetA < 0) targetA += Math.PI*2; let diff = targetA - shipA; if(diff < -Math.PI) diff += Math.PI*2; if(diff > Math.PI) diff -= Math.PI*2; keys.left = (diff > 0.1); keys.right = (diff < -0.1); let aligned = Math.abs(diff) < 0.5; keys.up = (distLimit > 250) || (aligned && Math.random() < 0.2) || (Math.random() < 0.05); keys.space = (Math.abs(diff) < 0.3); if(keys.space) shootLaser(); if(keys.up) { ship.thrust.x += 5 * Math.cos(ship.a) / FPS; ship.thrust.y -= 5 * Math.sin(ship.a) / FPS; emitThrustParticles(); } } else { keys.left = true; keys.up = (Math.random() < 0.1); } }
+    
+    function addCombo() {
+        comboTimer = 120; // 2 seconds to keep streak
+        combo++;
+        let txt = "x" + combo;
+        if(combo > 5) txt += "!";
+        spawnFloatingText(ship.x, ship.y - 30, txt, "yellow");
+    }
+
     function checkCollisions() {
         if(ship.blinkNum>0) return;
+        
+        // PLAYER VS ASTEROIDS
         for(let i=asteroids.length-1;i>=0;i--) {
             let a=asteroids[i];
             if((gameState===STATE_PLAYING || gameState===STATE_DEMO) && !ship.dead && dist(ship.x,ship.y,a.x,a.y)<ship.r+a.r) { playerHit(); asteroids.splice(i,1); return; }
             for(let j=lasers.length-1;j>=0;j--) {
-                if(dist(lasers[j].x,lasers[j].y,a.x,a.y)<a.r) { 
-                    lasers.splice(j,1); a.hp--;
+                let l = lasers[j];
+                if(dist(l.x,l.y,a.x,a.y)<a.r) { 
+                    if(l.type !== 2) lasers.splice(j,1); // Railgun doesn't die
+                    a.hp--;
                     if (a.hp > 0) { AudioSys.shoot(false); a.hitTime = 5; spawnFloatingText(a.x, a.y, "HIT", "gray"); createExplosion(a.x, a.y, a.color, "hit"); } 
                     else { 
                         AudioSys.playNoise(0.1,0.2); 
@@ -381,8 +449,9 @@
                         if(a.isSuper) pts = 2000;
                         if(a.isGold) { pts = 60000; AudioSys.jackpot(); }
                         
-                        score += pts; 
-                        spawnFloatingText(a.x, a.y, "+" + pts, a.isGold ? "gold" : (a.isSuper ? "#ff00ff" : "white")); 
+                        addCombo();
+                        score += pts * combo; 
+                        spawnFloatingText(a.x, a.y, "+" + (pts*combo), a.isGold ? "gold" : (a.isSuper ? "#ff00ff" : "white")); 
                         asteroids.splice(i,1); 
                     }
                     break; 
@@ -390,17 +459,46 @@
             }
         }
         
-        // ALIEN COLLISIONS
+        // PLAYER VS ALIENS
         for(let i=aliens.length-1; i>=0; i--) {
             let a = aliens[i];
             if((gameState===STATE_PLAYING || gameState===STATE_DEMO) && !ship.dead && dist(ship.x,ship.y,a.x,a.y)<ship.r+a.r) { playerHit(); aliens.splice(i,1); return; }
             for(let j=lasers.length-1; j>=0; j--) {
                 if(dist(lasers[j].x, lasers[j].y, a.x, a.y) < a.r) {
-                    lasers.splice(j,1);
+                    if(lasers[j].type !== 2) lasers.splice(j,1);
                     createExplosion(a.x, a.y, "purple", "hit");
-                    score += 200;
-                    spawnFloatingText(a.x, a.y, "+200", "purple");
+                    addCombo();
+                    score += 200 * combo;
+                    spawnFloatingText(a.x, a.y, "+" + (200*combo), "purple");
                     aliens.splice(i,1);
+                    AudioSys.playNoise(0.1,0.3);
+                    break;
+                }
+            }
+        }
+
+        // PLAYER VS HUNTER MINES
+        for(let i=hunterMines.length-1; i>=0; i--) {
+            let m = hunterMines[i];
+            // Tracking logic
+            let angle = Math.atan2(ship.y - m.y, ship.x - m.x);
+            m.xv += Math.cos(angle) * m.acc;
+            m.yv += Math.sin(angle) * m.acc;
+            // Cap speed
+            let spd = Math.sqrt(m.xv*m.xv + m.yv*m.yv);
+            if(spd > 5) { m.xv *= 0.95; m.yv *= 0.95; }
+            m.x += m.xv; m.y += m.yv;
+
+            if((gameState===STATE_PLAYING || gameState===STATE_DEMO) && !ship.dead && dist(ship.x,ship.y,m.x,m.y)<ship.r+m.r) { playerHit(); hunterMines.splice(i,1); return; }
+            
+            for(let j=lasers.length-1; j>=0; j--) {
+                if(dist(lasers[j].x, lasers[j].y, m.x, m.y) < m.r) {
+                    if(lasers[j].type !== 2) lasers.splice(j,1);
+                    createExplosion(m.x, m.y, "red", "hit");
+                    addCombo();
+                    score += 500 * combo;
+                    spawnFloatingText(m.x, m.y, "+" + (500*combo), "red");
+                    hunterMines.splice(i,1);
                     AudioSys.playNoise(0.1,0.3);
                     break;
                 }
@@ -424,7 +522,8 @@
         if(gameState===STATE_DEMO) { startDemo(); return; }
         if (ship.shieldTime > 0) { AudioSys.playNoise(0.2, 0.5); ship.shieldTime = 0; spawnFloatingText(ship.x, ship.y, "SHIELD BROKEN", "cyan"); return; }
         createExplosion(ship.x, ship.y, ship.color, "ship_death"); applyScreenShake(25); AudioSys.playNoise(0.5,0.5); lives--; 
-        if(lives===0)gameOver(); else { ship.blinkNum = 2*FPS; ship.doubleShip = false; ship.rapidFire = false; ship.tripleFire = (SHIPS[selectedShipIdx].id === 3); }
+        combo = 1;
+        if(lives===0)gameOver(); else { ship.blinkNum = 2*FPS; ship.doubleShip = false; ship.rapidFire = false; ship.weaponType=0; ship.tripleFire = (SHIPS[selectedShipIdx].id === 3); }
     }
 
     function checkWinCondition() { if(asteroids.length===0 && !boss && gameState===STATE_PLAYING) startWarpOut(); }
@@ -568,6 +667,22 @@
         if((gameState===STATE_PLAYING) && Math.random() < (0.005 + (level * 0.001)) && aliens.length < 3) {
             spawnAlien();
         }
+        // MINE SPAWNING (Randomly but rarer)
+        if((gameState===STATE_PLAYING) && Math.random() < (0.002 + (level * 0.0005)) && hunterMines.length < 2) {
+            spawnMine();
+        }
+
+        // COMBO DECAY
+        if(combo > 1) {
+            comboTimer--;
+            if(comboTimer <= 0) combo = 1;
+        }
+
+        // WEAPON TIMER DECAY
+        if(ship.weaponTimer > 0) {
+            ship.weaponTimer--;
+            if(ship.weaponTimer <= 0) ship.weaponType = 0; // Revert to normal
+        }
 
         for(let i=0;i<asteroids.length;i++){ 
             let a=asteroids[i]; let col = a.color; if (a.hitTime > 0) { a.hitTime--; col = "white"; } 
@@ -580,22 +695,32 @@
         }
         setGlow("transparent", 0);
 
-        // DRAW ALIENS
+        // DRAW ALIENS (Saucers)
         for(let i=0; i<aliens.length; i++) {
             let a = aliens[i];
-            // Chase logic
             let angleToPlayer = Math.atan2(ship.y - a.y, ship.x - a.x);
-            a.xv += Math.cos(angleToPlayer) * 0.2; // Acceleration
-            a.yv += Math.sin(angleToPlayer) * 0.2;
-            // Max speed clamp
-            let speed = Math.sqrt(a.xv*a.xv + a.yv*a.yv);
-            if(speed > 4) { a.xv *= 0.95; a.yv *= 0.95; }
+            a.xv += Math.cos(angleToPlayer) * 0.2; a.yv += Math.sin(angleToPlayer) * 0.2;
+            let speed = Math.sqrt(a.xv*a.xv + a.yv*a.yv); if(speed > 4) { a.xv *= 0.95; a.yv *= 0.95; }
             a.x += a.xv; a.y += a.yv;
             
-            setGlow("purple", 15); ctx.strokeStyle = "purple"; ctx.fillStyle="black"; ctx.lineWidth=2;
-            ctx.beginPath(); ctx.moveTo(a.x, a.y-10); ctx.lineTo(a.x-10, a.y+5); ctx.lineTo(a.x+10, a.y+5); ctx.closePath();
-            ctx.fill(); ctx.stroke();
+            setGlow("purple", 15); ctx.fillStyle="black"; ctx.strokeStyle = "purple"; ctx.lineWidth=2;
+            ctx.beginPath(); ctx.ellipse(a.x, a.y, 20, 8, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke(); // Disk
+            ctx.beginPath(); ctx.arc(a.x, a.y-5, 8, Math.PI, 0); ctx.stroke(); // Dome
             handleEdge(a);
+        }
+
+        // DRAW HUNTER MINES (Spiked Red Balls)
+        for(let i=0; i<hunterMines.length; i++) {
+            let m = hunterMines[i];
+            setGlow("red", 15); ctx.fillStyle="#300"; ctx.strokeStyle="red"; ctx.lineWidth=2;
+            ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            // Spikes
+            for(let j=0; j<8; j++) {
+                let ang = (globalTimer * 0.1) + (j * (Math.PI/4));
+                let sx = m.x + Math.cos(ang) * (m.r+5);
+                let sy = m.y + Math.sin(ang) * (m.r+5);
+                ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(sx, sy); ctx.stroke();
+            }
         }
 
         if(gameState===STATE_MENU) { 
@@ -609,7 +734,6 @@
                 ctx.fillStyle="white";ctx.font="20px 'Press Start 2P'";ctx.fillText("TAP OR PRESS ENTER",canvas.width/2,400);
             } 
             ctx.font="15px 'Press Start 2P'"; ctx.fillStyle="#aaa"; 
-            // UPDATED TEXT FOR MOBILE USERS
             ctx.fillText("TAP LEFT FOR HELP",canvas.width/2,460); 
             ctx.fillText("TAP RIGHT FOR CREDITS",canvas.width/2,490); 
             ctx.font="12px 'Press Start 2P'"; ctx.fillStyle="#33ff00"; ctx.fillText("© 2025 SUNDOWN INTERACTIVE",canvas.width/2,550); 
@@ -619,7 +743,6 @@
         if(gameState===STATE_HELP) { renderHelp(); ctx.restore(); return; }
         if(gameState===STATE_CREDITS) { renderCredits(); ctx.restore(); return; }
         
-        // ARCADE ENTRY RENDER
         if(gameState===STATE_ENTER_NAME) { 
             drawCenteredText("NEW HIGH SCORE!",-50,30); 
             drawCenteredText("ENTER INITIALS",-20,20); 
@@ -642,18 +765,20 @@
 
         setGlow("#33ff00", 15);
         for(let i=lasers.length-1;i>=0;i--){
-            let l = lasers[i]; ctx.fillStyle=ship.rapidFire?"yellow":"#33ff00"; ctx.strokeStyle=ctx.fillStyle; ctx.lineWidth=3;
+            let l = lasers[i]; ctx.fillStyle=l.color; ctx.strokeStyle=l.color; ctx.lineWidth=3;
             ctx.save(); ctx.translate(l.x, l.y); 
             ctx.rotate(-l.ang); 
             ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(10, 0); ctx.stroke(); 
             ctx.beginPath(); ctx.arc(10, 0, 3, 0, Math.PI*2); ctx.fill(); 
             ctx.restore();
-            l.x+=l.xv;l.y+=l.yv;l.dist+=Math.sqrt(Math.pow(l.xv,2)+Math.pow(l.yv,2));if(l.dist>canvas.width*0.7)lasers.splice(i,1);else handleEdge(l,true);
+            l.x+=l.xv;l.y+=l.yv;l.dist+=Math.sqrt(Math.pow(l.xv,2)+Math.pow(l.yv,2));if(l.dist>l.maxDist)lasers.splice(i,1);else handleEdge(l,true);
         }
         setGlow("transparent", 0);
         ctx.fillStyle="red"; for(let i=bossBullets.length-1;i>=0;i--){let b=bossBullets[i]; ctx.beginPath();ctx.arc(b.x,b.y,5,0,Math.PI*2);ctx.fill(); b.x+=b.xv; b.y+=b.yv; if(b.x<0||b.x>canvas.width||b.y>canvas.height) bossBullets.splice(i,1); }
 
-        for(let i=powerups.length-1;i>=0;i--){ let p=powerups[i]; setGlow("white", 10); ctx.fillStyle="white";ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();setGlow("transparent",0);ctx.fillStyle="black";ctx.font="bold 15px 'Press Start 2P'";ctx.textAlign="center";ctx.textBaseline="middle"; let c="?"; if(p.type===PU_RAPID) c="R"; else if(p.type===PU_DOUBLE) c="D"; else if(p.type===PU_NUKE) c="N"; else if(p.type===PU_SHIELD) c="S"; else if(p.type===PU_TRIPLE) c="T"; ctx.fillText(c,p.x,p.y); if(dist(ship.x,ship.y,p.x,p.y)<ship.r+p.r){activatePowerUp(p.type);powerups.splice(i,1);} }
+        for(let i=powerups.length-1;i>=0;i--){ let p=powerups[i]; setGlow("white", 10); ctx.fillStyle="white";ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();setGlow("transparent",0);ctx.fillStyle="black";ctx.font="bold 15px 'Press Start 2P'";ctx.textAlign="center";ctx.textBaseline="middle"; let c="?"; 
+        if(p.type===PU_RAPID) c="R"; else if(p.type===PU_DOUBLE) c="D"; else if(p.type===PU_NUKE) c="N"; else if(p.type===PU_SHIELD) c="S"; else if(p.type===PU_TRIPLE) c="T"; else if(p.type===PU_SHOTGUN) c="S"; else if(p.type===PU_RAILGUN) c="G";
+        ctx.fillText(c,p.x,p.y); if(dist(ship.x,ship.y,p.x,p.y)<ship.r+p.r){activatePowerUp(p.type);powerups.splice(i,1);} }
         
         for(let i=particles.length-1;i>=0;i--){
             let p=particles[i]; 
@@ -722,10 +847,12 @@
                 // Navigation Logic
                 if(gameState===STATE_HANGAR || gameState===STATE_MENU || gameState===STATE_ENTER_NAME || gameState===STATE_HELP || gameState===STATE_CREDITS) {
                     if(key==='left') {
-                        document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 37}));
+                        if(gameState===STATE_MENU) document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 72})); 
+                        else document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 37}));
                     }
                     if(key==='right') {
-                        document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 39}));
+                        if(gameState===STATE_MENU) document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 67})); 
+                        else document.dispatchEvent(new KeyboardEvent('keydown', {'keyCode': 39}));
                     }
                 }
             }
